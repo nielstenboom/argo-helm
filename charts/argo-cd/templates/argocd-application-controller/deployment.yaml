@@ -17,17 +17,15 @@ spec:
   replicas: {{ .Values.controller.replicas }}
   template:
     metadata:
-      {{- if .Values.controller.podAnnotations }}
+      {{- with (mergeOverwrite (deepCopy .Values.global.podAnnotations) .Values.controller.podAnnotations) }}
       annotations:
-      {{- range $key, $value := .Values.controller.podAnnotations }}
-        {{ $key }}: {{ $value | quote }}
-      {{- end }}
+        {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
         {{- include "argo-cd.labels" (dict "context" . "component" .Values.controller.name "name" .Values.controller.name) | nindent 8 }}
         app.kubernetes.io/version: {{ default .Values.global.image.tag .Values.controller.image.tag | quote }}
-        {{- if .Values.controller.podLabels }}
-{{- toYaml .Values.controller.podLabels | nindent 8 }}
+        {{- with (mergeOverwrite (deepCopy .Values.global.podLabels) .Values.controller.podLabels) }}
+          {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
       {{- with .Values.global.imagePullSecrets }}
@@ -50,6 +48,8 @@ spec:
         - {{ .Values.controller.args.selfHealTimeout | quote }}
         - --repo-server
         - {{ template "argo-cd.repoServer.fullname" . }}:{{ .Values.repoServer.service.port }}
+        - --repo-server-timeout-seconds
+        - {{ .Values.controller.args.repoServerTimeoutSeconds | quote }}
         - --logformat
         - {{ .Values.controller.logFormat }}
         - --loglevel
@@ -95,14 +95,20 @@ spec:
           timeoutSeconds: {{ .Values.controller.readinessProbe.timeoutSeconds }}
           successThreshold: {{ .Values.controller.readinessProbe.successThreshold }}
           failureThreshold: {{ .Values.controller.readinessProbe.failureThreshold }}
+        workingDir: /home/argocd
         volumeMounts:
+        - name: argocd-home
+          mountPath: /home/argocd
         - mountPath: /app/config/controller/tls
           name: argocd-repo-server-tls
         {{- with .Values.controller.volumeMounts }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
         resources:
-{{- toYaml .Values.controller.resources | nindent 10 }}
+          {{- toYaml .Values.controller.resources | nindent 10 }}
+      {{- with .Values.controller.extraContainers }}
+        {{- toYaml . | nindent 6 }}
+      {{- end }}
     {{- if .Values.controller.nodeSelector }}
       nodeSelector:
 {{- toYaml .Values.controller.nodeSelector | nindent 8 }}
@@ -115,12 +121,25 @@ spec:
       affinity:
 {{- toYaml .Values.controller.affinity | nindent 8 }}
     {{- end }}
+    {{- with .Values.controller.topologySpreadConstraints }}
+      topologySpreadConstraints:
+      {{- range $constraint := . }}
+      - {{ toYaml $constraint | nindent 8 | trim }}
+        {{- if not $constraint.labelSelector }}
+        labelSelector:
+          matchLabels:
+            {{- include "argo-cd.selectorLabels" (dict "context" $ "name" $.Values.controller.name) | nindent 12 }}
+        {{- end }}
+      {{- end }}
+    {{- end }}
       serviceAccountName: {{ template "argo-cd.controllerServiceAccountName" . }}
-{{- with .Values.global.hostAliases }}
+      {{- with .Values.global.hostAliases }}
       hostAliases:
-{{ toYaml . | indent 6 }}
-{{- end }}
+        {{- toYaml . | nindent 6 }}
+      {{- end }}
       volumes:
+      - emptyDir: {}
+        name: argocd-home
       - name: argocd-repo-server-tls
         secret:
           items:

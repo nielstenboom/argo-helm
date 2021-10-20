@@ -10,8 +10,52 @@ This is a **community maintained** chart. This chart installs [argo-cd](https://
 
 The default installation is intended to be similar to the provided ArgoCD [releases](https://github.com/argoproj/argo-cd/releases).
 
-This chart currently installs the non-HA version of ArgoCD.
+## High Availability
 
+This chart installs the non-HA version of ArgoCD by default. If you want to run ArgoCD in HA mode, you can use one of the example values in the next sections.
+Please also have a look into the upstream [Operator Manual regarding High Availability](https://argoproj.github.io/argo-cd/operator-manual/high_availability/) to understand how scaling of ArgoCD works in detail.
+
+> **Warning:**  
+> You need at least 3 worker nodes as the HA mode of redis enforces Pods to run on separate nodes.
+
+### HA mode with autoscaling
+
+```yaml
+redis-ha:
+  enabled: true
+
+controller:
+  enableStatefulSet: true
+
+server:
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+
+repoServer:
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+```
+
+### HA mode without autoscaling
+
+```yaml
+redis-ha:
+  enabled: true
+
+controller:
+  enableStatefulSet: true
+
+server:
+  replicas: 2
+  env:
+    - name: ARGOCD_API_SERVER_REPLICAS
+      value: '2'
+
+repoServer:
+  replicas: 2
+```
 ### Synchronizing Changes from Original Repository
 
 In the original [ArgoCD repository](https://github.com/argoproj/argo-cd/) an [`manifests/install.yaml`](https://github.com/argoproj/argo-cd/blob/master/manifests/install.yaml) is generated using `kustomize`. It's the basis for the installation as [described in the docs](https://argo-cd.readthedocs.io/en/stable/getting_started/#1-install-argo-cd).
@@ -33,6 +77,15 @@ git diff v1.8.7 v2.0.0 -- manifests/install.yaml
 Changes in the `CustomResourceDefinition` resources shall be fixed easily by copying 1:1 from the [`manifests/crds` folder](https://github.com/argoproj/argo-cd/tree/master/manifests/crds) into this [`charts/argo-cd/crds` folder](https://github.com/argoproj/argo-helm/tree/master/charts/argo-cd/crds).
 
 ## Upgrading
+
+### 3.13.0
+
+This release removes the flag `--staticassets` from argocd server as it has been dropped upstream. If this flag needs to be enabled e.g for older releases of ArgoCD, it can be passed via the `server.extraArgs` field
+
+### 3.10.2
+
+ArgoCD has recently deprecated the flag `--staticassets` and from chart version `3.10.2` has been disabled by default
+It can be re-enabled by setting `server.staticAssets.enabled` to true
 
 ### 3.8.1
 
@@ -62,7 +115,7 @@ server:
 
 Please check if you are affected by one of these cases **before you upgrade**, especially when you use **cloud IAM roles for service accounts.** (eg. IRSA on AWS or Workload Identity for GKE)
 
-### 3.2.* 
+### 3.2.*
 
 With this minor version we introduced the evaluation for the ingress manifest (depending on the capabilities version), See [Pull Request](https://github.com/argoproj/argo-helm/pull/637).
 [Issue 703](https://github.com/argoproj/argo-helm/issues/703) reported that the capabilities evaluation is **not handled correctly when deploying the chart via an ArgoCD instance**,
@@ -72,7 +125,7 @@ If you are running a cluster version prior to `1.19` you can avoid this issue by
 
 ```yaml
 kubeVersionOverride: "1.18.0"
-``` 
+```
 
 Then you should no longer encounter this issue.
 
@@ -132,7 +185,9 @@ NAME: my-release
 |-----|------|---------|
 | global.image.imagePullPolicy | If defined, a imagePullPolicy applied to all ArgoCD deployments. | `"IfNotPresent"` |
 | global.image.repository | If defined, a repository applied to all ArgoCD deployments. | `"argoproj/argocd"` |
-| global.image.tag | If defined, a tag applied to all ArgoCD deployments. | `"v2.0.4"` |
+| global.image.tag | If defined, a tag applied to all ArgoCD deployments. | `"v2.1.4"` |
+| global.podAnnotations | Annotations for the all deployed pods |
+| global.podLabels | Labels for the all deployed pods |
 | global.securityContext | Toggle and define securityContext | See [values.yaml](values.yaml) |
 | global.imagePullSecrets | If defined, uses a Secret to pull an image from a private Docker registry or repository. | `[]` |
 | global.hostAliases | Mapping between IP and hostnames that will be injected as entries in the pod's hosts files | `[]` |
@@ -143,6 +198,7 @@ NAME: my-release
 | fullnameOverride | String to fully override `"argo-cd.fullname"` | `""` |
 | apiVersionOverrides.certmanager | String to override apiVersion of certmanager resources rendered by this helm chart | `""` |
 | apiVersionOverrides.ingress | String to override apiVersion of ingresses rendered by this helm chart | `""` |
+| createAggregateRoles | Create clusterroles that extend aggregated roles to use argo-cd crds | `false` |
 | configs.clusterCredentials | Provide one or multiple [external cluster credentials](https://argoproj.github.io/argo-cd/operator-manual/declarative-setup/#clusters) | `[]` (See [values.yaml](values.yaml)) |
 | configs.gpgKeysAnnotations | GnuPG key ring annotations | `{}` |
 | configs.gpgKeys | [GnuPG](https://argoproj.github.io/argo-cd/user-guide/gpg-verification/) keys to add to the key ring | `{}` (See [values.yaml](values.yaml)) |
@@ -155,24 +211,33 @@ NAME: my-release
 | configs.secret.createSecret | Create the argocd-secret. | `true` |
 | configs.secret.githubSecret | GitHub incoming webhook secret | `""` |
 | configs.secret.gitlabSecret | GitLab incoming webhook secret | `""` |
+| configs.repositoryCredentials | DEPRECATED: Instead, use configs.credentialTemplates and/or configs.repositories. | `{}` |
+| configs.credentialTemplates | Repository credentials to be used as Templates for other repos. | `{}` |
+| configs.repositories | Repositories list to be used by applications. | `{}` |
 | configs.tlsCertsAnnotations | TLS certificate configmap annotations | `{}` |
 | configs.tlsCerts.data."argocd.example.com" | TLS certificate | See [values.yaml](values.yaml) |
 | configs.secret.extra | add additional secrets to be added to argocd-secret | `{}` |
 | configs.styles | Define custom CSS styles for your argo instance ([Read More](https://argo-cd.readthedocs.io/en/stable/operator-manual/custom-styles/)). This Settings will automatically mount the provided css and reference it in the argo configuration. | `""` (See [values.yaml](values.yaml)) |
 | openshift.enabled | enables using arbitrary uid for argo repo server | `false` |
+| server.additionalApplications | Deploy ArgoCD Applications within this helm release | `[]` (See [values.yaml](values.yaml)) |
+| server.additionalProjects | Deploy ArgoCD Projects within this helm release | `[]` (See [values.yaml](values.yaml)) |
 
 ## ArgoCD Controller
 
 | Parameter | Description | Default |
 |-----|---------|-------------|
 | controller.affinity | [Assign custom affinity rules to the deployment](https://kubernetes.io/docs/concepts/configuration/assign-pod-node/) | `{}` |
+| controller.topologySpreadConstraints | [Assign custom topologySpreadConstraints rules to the deployment](https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/) | `[]` |
 | controller.args.operationProcessors | define the controller `--operation-processors` | `"10"` |
 | controller.args.appResyncPeriod | define the controller `--app-resync` | `"180"` |
 | controller.args.selfHealTimeout | define the controller `--self-heal-timeout-seconds` | `"5"` |
 | controller.args.statusProcessors | define the controller `--status-processors` | `"20"` |
 | controller.clusterAdminAccess.enabled | Enable RBAC for local cluster deployments. | `true` |
+| controller.clusterRoleRules.enabled | Enable custom rules for the Application Controller's Cluster Role resource. | `false` |
+| controller.clusterRoleRules.rules | List of custom rules for the Application Controller's Cluster Role resource. | `[]` |
 | controller.containerPort | Controller listening port. | `8082` |
 | controller.extraArgs | Additional arguments for the controller. A list of flags | `[]` |
+| controller.extraContainers | Additional containers for the controller. A list of containers. | `[]` |
 | controller.enableStatefulSet | Enable deploying the controller as a StatefulSet instead of a Deployment. Used for HA installations. | `false` |
 | controller.env | Environment variables for the controller. | `[]` |
 | controller.envFrom | `envFrom` to pass to the controller. | `[]` (See [values.yaml](values.yaml)) |
@@ -191,6 +256,8 @@ NAME: my-release
 | controller.metrics.service.servicePort | Metrics service port | `8082` |
 | controller.metrics.serviceMonitor.enabled | Enable a prometheus ServiceMonitor. | `false` |
 | controller.metrics.serviceMonitor.selector | Prometheus ServiceMonitor selector. | `{}` |
+| controller.metrics.serviceMonitor.relabelings | Prometheus [RelabelConfigs](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config) to apply to samples before scraping | `[]` |
+| controller.metrics.serviceMonitor.metricRelabelings | Prometheus [MetricRelabelConfigs](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#metric_relabel_configs) to apply to samples before ingestion | `[]` |
 | controller.name | Controller name string. | `"application-controller"` |
 | controller.nodeSelector | [Node selector](https://kubernetes.io/docs/user-guide/node-selection/) | `{}` |
 | controller.podAnnotations | Annotations for the controller pods | `{}` |
@@ -219,13 +286,18 @@ NAME: my-release
 | Property | Description | Default |
 |-----|---------|-------------|
 | repoServer.affinity | [Assign custom affinity rules to the deployment](https://kubernetes.io/docs/concepts/configuration/assign-pod-node/) | `{}` |
+| repoServer.topologySpreadConstraints | [Assign custom topologySpreadConstraints rules to the deployment](https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/) | `[]` |
 | repoServer.autoscaling.enabled | Enable Horizontal Pod Autoscaler ([HPA](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/)) for the repo server | `false` |
 | repoServer.autoscaling.minReplicas | Minimum number of replicas for the repo server [HPA](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) | `1` |
 | repoServer.autoscaling.maxReplicas | Maximum number of replicas for the repo server [HPA](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) | `5` |
 | repoServer.autoscaling.targetCPUUtilizationPercentage | Average CPU utilization percentage for the repo server [HPA](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) | `50` |
 | repoServer.autoscaling.targetMemoryUtilizationPercentage | Average memory utilization percentage for the repo server [HPA](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) | `50` |
+| repoServer.clusterAdminAccess.enabled | Enable RBAC for local cluster deployments. | `false` |
+| repoServer.clusterRoleRules.enabled | Enable custom rules for the Repo server's Cluster Role resource. | `false` |
+| repoServer.clusterRoleRules.rules | List of custom rules for the Repo server's Cluster Role resource. | `[]` |
 | repoServer.containerPort | Repo server port | `8081` |
 | repoServer.extraArgs | Additional arguments for the repo server. A  list of flags. | `[]` |
+| repoServer.extraContainers | Additional containers for the repo server. A list of containers. | `[]` |
 | repoServer.env | Environment variables for the repo server. | `[]` |
 | repoServer.envFrom | `envFrom` to pass to the repo server. | `[]` (See [values.yaml](values.yaml)) |
 | repoServer.image.repository | Repository to use for the repo server | `global.image.repository` |
@@ -243,6 +315,8 @@ NAME: my-release
 | repoServer.metrics.service.servicePort | Metrics service port | `8082` |
 | repoServer.metrics.serviceMonitor.enabled | Enable a prometheus ServiceMonitor. | `false` |
 | repoServer.metrics.serviceMonitor.selector | Prometheus ServiceMonitor selector. | `{}` |
+| repoServer.metrics.serviceMonitor.relabelings | Prometheus [RelabelConfigs](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config) to apply to samples before scraping | `[]` |
+| repoServer.metrics.serviceMonitor.metricRelabelings | Prometheus [MetricRelabelConfigs](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#metric_relabel_configs) to apply to samples before ingestion | `[]` |
 | repoServer.name | Repo server name | `"repo-server"` |
 | repoServer.nodeSelector | [Node selector](https://kubernetes.io/docs/user-guide/node-selection/) | `{}` |
 | repoServer.podAnnotations | Annotations for the repo server pods | `{}` |
@@ -271,6 +345,7 @@ NAME: my-release
 | Parameter | Description | Default |
 |-----|---------|-------------|
 | server.affinity | [Assign custom affinity rules to the deployment](https://kubernetes.io/docs/concepts/configuration/assign-pod-node/) | `{}` |
+| server.topologySpreadConstraints | [Assign custom topologySpreadConstraints rules to the deployment](https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/) | `[]` |
 | server.autoscaling.enabled | Enable Horizontal Pod Autoscaler ([HPA](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/)) for the server | `false` |
 | server.autoscaling.minReplicas | Minimum number of replicas for the server [HPA](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) | `1` |
 | server.autoscaling.maxReplicas | Maximum number of replicas for the server [HPA](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) | `5` |
@@ -285,8 +360,11 @@ NAME: my-release
 | server.clusterAdminAccess.enabled | Enable RBAC for local cluster deployments. | `true` |
 | server.configAnnotations | ArgoCD configuration configmap annotations | `{}` |
 | server.config | [General Argo CD configuration](https://argoproj.github.io/argo-cd/operator-manual/declarative-setup/#repositories) | See [values.yaml](values.yaml) |
+| server.config.repositories | [DEPRECATED: Instead, use configs.credentialTemplates and/or configs.repositories.](https://argo-cd.readthedocs.io/en/latest/operator-manual/declarative-setup/#legacy-behaviour) | See [values.yaml](values.yaml) |
 | server.containerPort | Server container port. | `8080` |
 | server.extraArgs | Additional arguments for the server. A list of flags. | `[]` |
+| server.extraContainers | Additional containers for the server. A list of containers. | `[]` |
+| server.staticAssets.enabled | Disable deprecated flag --staticassets | `false` |
 | server.env | Environment variables for the server. | `[]` |
 | server.envFrom | `envFrom` to pass to the server. | `[]` (See [values.yaml](values.yaml)) |
 | server.image.repository | Repository to use for the server | `global.image.repository` |
@@ -306,6 +384,8 @@ NAME: my-release
 | server.ingressGrpc.ingressClassName | Defines which ingress controller will implement the resource [gRPC-ingress] | `""` |
 | server.ingressGrpc.tls | Ingress TLS configuration for dedicated [gRPC-ingress] | `[]` |
 | server.ingressGrpc.isAWSALB | Setup up GRPC ingress to work with an AWS ALB | `false` |
+| server.ingressGrpc.awsALB.serviceType | Service type for the AWS ALB GRPC service | `NodePort` |
+| server.ingressGrpc.awsALB.backendProtocolVersion | Backend protocol version for the AWS ALB GRPC service | `HTTP2` |
 | server.route.enabled | Enable a OpenShift route for the server | `false` |
 | server.route.hostname | Hostname of OpenShift route | `""` |
 | server.lifecycle | PostStart and PreStop hooks configuration | `{}` |
@@ -321,6 +401,8 @@ NAME: my-release
 | server.metrics.service.servicePort | Metrics service port | `8082` |
 | server.metrics.serviceMonitor.enabled | Enable a prometheus ServiceMonitor. | `false` |
 | server.metrics.serviceMonitor.selector | Prometheus ServiceMonitor selector. | `{}` |
+| server.metrics.serviceMonitor.relabelings | Prometheus [RelabelConfigs](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config) to apply to samples before scraping | `[]` |
+| server.metrics.serviceMonitor.metricRelabelings | Prometheus [MetricRelabelConfigs](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#metric_relabel_configs) to apply to samples before ingestion | `[]` |
 | server.name | Argo CD server name | `"server"` |
 | server.nodeSelector | [Node selector](https://kubernetes.io/docs/user-guide/node-selection/) | `{}` |
 | server.podAnnotations | Annotations for the server pods | `{}` |
@@ -359,6 +441,7 @@ NAME: my-release
 | Property | Description | Default |
 |-----|---------|-------------|
 | dex.affinity | [Assign custom affinity rules to the deployment](https://kubernetes.io/docs/concepts/configuration/assign-pod-node/) | `{}` |
+| dex.topologySpreadConstraints | [Assign custom topologySpreadConstraints rules to the deployment](https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/) | `[]` |
 | dex.containerPortGrpc | GRPC container port | `5557` |
 | dex.containerPortHttp | HTTP container port | `5556` |
 | dex.enabled | Enable dex | `true` |
@@ -373,22 +456,41 @@ NAME: my-release
 | dex.metrics.service.labels | Metrics service labels | `{}` |
 | dex.metrics.serviceMonitor.enabled | Enable a prometheus ServiceMonitor. | `false` |
 | dex.metrics.serviceMonitor.selector | Prometheus ServiceMonitor selector. | `{}` |
+| dex.metrics.serviceMonitor.relabelings | Prometheus [RelabelConfigs](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config) to apply to samples before scraping | `[]` |
+| dex.metrics.serviceMonitor.metricRelabelings | Prometheus [MetricRelabelConfigs](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#metric_relabel_configs) to apply to samples before ingestion | `[]` |
 | dex.name | Dex name | `"dex-server"` |
+| dex.extraContainers | Additional containers for the Dex server. A list of containers. | `[]` |
 | dex.env | Environment variables for the Dex server. | `[]` |
 | dex.envFrom | `envFrom` to pass to the Dex server. | `[]` (See [values.yaml](values.yaml)) |
 | dex.nodeSelector | [Node selector](https://kubernetes.io/docs/user-guide/node-selection/) | `{}` |
 | dex.podAnnotations | Annotations for the Dex server pods | `{}` |
 | dex.podLabels | Labels for the Dex server pods | `{}` |
+| dex.livenessProbe.enabled | Enable Kubernetes liveness probe for Dex >= 2.28.0 | `false` |
+| dex.livenessProbe.failureThreshold | [Kubernetes probe configuration](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#container-probes) | `3` |
+| dex.livenessProbe.initialDelaySeconds | [Kubernetes probe configuration](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#container-probes) |`10` |
+| dex.livenessProbe.periodSeconds | [Kubernetes probe configuration](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#container-probes) | `10` |
+| dex.livenessProbe.successThreshold | [Kubernetes probe configuration](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#container-probes) | `1` |
+| dex.livenessProbe.timeoutSeconds | [Kubernetes probe configuration](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#container-probes) | `1` |
+| dex.readinessProbe.enabled | Enable Kubernetes readiness probe for Dex >= 2.28.0 | `false` |
+| dex.readinessProbe.failureThreshold | [Kubernetes probe configuration](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#container-probes) | `3` |
+| dex.readinessProbe.initialDelaySeconds | [Kubernetes probe configuration](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#container-probes) |`10` |
+| dex.readinessProbe.periodSeconds | [Kubernetes probe configuration](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#container-probes) | `10` |
+| dex.readinessProbe.successThreshold | [Kubernetes probe configuration](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#container-probes) | `1` |
+| dex.readinessProbe.timeoutSeconds | [Kubernetes probe configuration](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#container-probes) | `1` |
 | dex.priorityClassName | Priority class for dex | `""` |
 | dex.resources | Resource limits and requests for dex | `{}` |
 | dex.serviceAccount.automountServiceAccountToken | Automount API credentials for the Service Account | `true` |
 | dex.serviceAccount.create | Create dex service account | `true` |
 | dex.serviceAccount.name | Dex service account name | `"argocd-dex-server"` |
 | dex.servicePortGrpc | Server GRPC port | `5557` |
+| dex.servicePortGrpcName | Server GRPC port name | `grpc` |
 | dex.servicePortHttp | Server HTTP port | `5556` |
+| dex.servicePortHttpName | Server GRPC port name | `http` |
 | dex.tolerations | [Tolerations for use with node taints](https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/) | `[]` |
 | dex.volumeMounts | Dex volume mounts | `"/shared"` |
 | dex.volumes | Dex volumes | `{}` |
+| dex.extraVolumeMounts | Extra dex volume mounts | `[]` |
+| dex.extraVolumes | Extra dex volumes | `[]` |
 
 ## Redis
 
@@ -401,12 +503,14 @@ through `xxx.extraArgs`
 | Parameter | Description | Default |
 |-----|---------|-------------|
 | redis.affinity | [Assign custom affinity rules to the deployment](https://kubernetes.io/docs/concepts/configuration/assign-pod-node/) | `{}` |
+| redis.topologySpreadConstraints | [Assign custom topologySpreadConstraints rules to the deployment](https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/) | `[]` |
 | redis.containerPort | Redis container port | `6379` |
 | redis.enabled | Enable redis | `true` |
 | redis.image.imagePullPolicy | Redis imagePullPolicy | `"IfNotPresent"` |
 | redis.image.repository | Redis repository | `"redis"` |
 | redis.image.tag | Redis tag | `"6.2.1-alpine"` |
 | redis.extraArgs | Additional arguments for the `redis-server`. A list of flags. | `[]` |
+| redis.extraContainers | Additional containers for the redis. A list of containers. | `[]` |
 | redis.name | Redis name | `"redis"` |
 | redis.env | Environment variables for the Redis server. | `[]` |
 | redis.envFrom | `envFrom` to pass to the Redis server. | `[]` (See [values.yaml](values.yaml)) |
@@ -417,7 +521,28 @@ through `xxx.extraArgs`
 | redis.resources | Resource limits and requests for redis | `{}` |
 | redis.securityContext | Redis Pod Security Context | See [values.yaml](values.yaml) |
 | redis.servicePort | Redis service port | `6379` |
+| redis.service.annotations | Redis service annotations | `{}` |
+| redis.service.labels | Additional redis service labels | `{}` |
 | redis.tolerations | [Tolerations for use with node taints](https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/) | `[]` |
+| redis.metrics.enabled | Deploy metrics service and redis-exporter sidecar | `false` |
+| redis.metrics.image.repository | redis-exporter image repository | `quay.io/bitnami/redis-exporter` |
+| redis.metrics.image.tag | redis-exporter image tag | `1.26.0-debian-10-r2` |
+| redis.metrics.image.imagePullPolicy | redis-exporter image PullPolicy | `IfNotPresent` |
+| redis.metrics.containerPort | Port to use for redis-exporter sidecar | `9121` |
+| redis.metrics.resources | Resource limits and requests for redis-exporter sidecar | `{}` |
+| redis.metrics.service.type | Metrics service type | `ClusterIP` |
+| redis.metrics.service.clusterIP | Metrics service clusterIP. `None` makes a "headless service" (no virtual IP) | `None` |
+| redis.metrics.service.annotations | Metrics service annotations | `{}` |
+| redis.metrics.service.labels | Metrics service labels | `{}` |
+| redis.metrics.service.servicePort | Metrics service port | `9121` |
+| redis.metrics.service.portName | Metrics service port name | `http-metrics` |
+| redis.metrics.serviceMonitor.enabled | Enable a prometheus ServiceMonitor | `false` |
+| redis.metrics.serviceMonitor.interval | Interval at which metrics should be scraped | `30s` |
+| redis.metrics.serviceMonitor.relabelings | Prometheus [RelabelConfigs](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config) to apply to samples before scraping | `[]` |
+| redis.metrics.serviceMonitor.metricRelabelings | Prometheus [MetricRelabelConfigs](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#metric_relabel_configs) to apply to samples before ingestion | `[]` |
+| redis.metrics.serviceMonitor.selector | Prometheus ServiceMonitor selector labels | `{}` |
+| redis.metrics.serviceMonitor.namespace | Prometheus ServiceMonitor namespace | `<nil>` |
+| redis.metrics.serviceMonitor.additionalLabels | Additional labels to add to the Prometheus ServiceMonitor | `{}` |
 | redis-ha | Configures [Redis HA subchart](https://github.com/DandyDeveloper/charts/tree/master/charts/redis-ha) The properties below have been changed from the subchart defaults | |
 | redis-ha.enabled | Enables the Redis HA subchart and disables the custom Redis single node deployment| `false` |
 | redis-ha.exporter.enabled | If `true`, the prometheus exporter sidecar is enabled | `true` |
@@ -433,14 +558,14 @@ through `xxx.extraArgs`
 
 
 ### Using AWS ALB Ingress Controller With GRPC
-If you are using an AWS ALB Ingress controller, you will need to set `server.ingressGrpc.isAWSALB` to `true`. This will create a second service with the annotation `alb.ingress.kubernetes.io/backend-protocol-version: HTTP2` and modify the server ingress to add a condition annotation to route GRPC traffic to the new service. 
+If you are using an AWS ALB Ingress controller, you will need to set `server.ingressGrpc.isAWSALB` to `true`. This will create a second service with the annotation `alb.ingress.kubernetes.io/backend-protocol-version: HTTP2` and modify the server ingress to add a condition annotation to route GRPC traffic to the new service.
 
 Example:
 ```yaml
 server:
   ingress:
     enabled: true
-    annotations: 
+    annotations:
       alb.ingress.kubernetes.io/backend-protocol: HTTPS
       alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
       alb.ingress.kubernetes.io/scheme: internal
@@ -448,5 +573,7 @@ server:
   ingressGrpc:
     enabled: true
     isAWSALB: true
-      
+    awsALB:
+      serviceType: ClusterIP
+
 ```

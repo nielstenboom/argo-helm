@@ -42,6 +42,10 @@ controller:
     tag: ""
   # parallelism dictates how many workflows can be running at the same time
   parallelism:
+  # Limits the maximum number of incomplete workflows in a namespace
+  namespaceParallelism:
+  # Resolves ongoing, uncommon AWS EKS bug: https://github.com/argoproj/argo-workflows/pull/4224
+  initialDelay:
   # podAnnotations is an optional map of annotations to be applied to the controller Pods
   podAnnotations: {}
   # Optional labels to add to the controller pods
@@ -53,6 +57,7 @@ controller:
     enabled: false
     path: /metrics
     port: 9090
+    portName: metrics
     servicePort: 8080
     servicePortName: metrics
   # the controller container's securityContext
@@ -111,6 +116,11 @@ controller:
   workflowNamespaces:
     - default
   containerRuntimeExecutor: docker
+  # containerRuntimeExecutors:
+  #   - name: emissary
+  #     selector:
+  #       matchLabels:
+  #         workflows.argoproj.io/container-runtime-executor: emissary
   instanceID:
     # `instanceID.enabled` configures the controller to filter workflow submissions
     # to only those which have a matching instanceID attribute.
@@ -170,6 +180,8 @@ controller:
   clusterWorkflowTemplates:
     # Create a ClusterRole and CRB for the controller to access ClusterWorkflowTemplates.
     enabled: true
+  # Extra containers to be added to the controller deployment
+  extraContainers: []
 
 # executor controls how the init and wait container should be customized
 executor:
@@ -211,6 +223,7 @@ server:
   name: server
   serviceType: ClusterIP
   servicePort: 2746
+  # serviceNodePort: 32746
   # servicePortName: http
   serviceAccount:
     create: true
@@ -281,6 +294,7 @@ server:
       # - argoworkflows.example.com
     paths:
       - /
+    pathType: Prefix
     extraPaths:
       []
       # - path: /*
@@ -336,6 +350,8 @@ server:
     ## decisions.
     # scopes:
     # - groups
+  # Extra containers to be added to the server deployment
+  extraContainers: []
 
 # Influences the creation of the ConfigMap for the workflow-controller itself.
 useDefaultArtifactRepo: false

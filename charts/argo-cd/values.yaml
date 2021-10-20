@@ -8,8 +8,12 @@ kubeVersionOverride: ""
 global:
   image:
     repository: quay.io/argoproj/argocd
-    tag: v2.0.4
+    tag: v2.1.4
     imagePullPolicy: IfNotPresent
+  ## Annotations applied to all pods
+  podAnnotations: {}
+  ## Labels applied to all pods
+  podLabels: {}
   securityContext: {}
   #  runAsUser: 999
   #  runAsGroup: 999
@@ -30,6 +34,10 @@ global:
 apiVersionOverrides:
   certmanager: "" # cert-manager.io/v1
   ingress: "" # networking.k8s.io/v1beta1
+
+## Create clusterroles that extend existing clusterroles to interact with argo-cd crds
+## Ref: https://kubernetes.io/docs/reference/access-authn-authz/rbac/#aggregated-clusterroles
+createAggregateRoles: false
 
 ## Controller
 controller:
@@ -53,6 +61,7 @@ controller:
     operationProcessors: "10"
     appResyncPeriod: "180"
     selfHealTimeout: "5"
+    repoServerTimeoutSeconds: "60"
 
   ## Argo controller log format: text|json
   logFormat: text
@@ -93,6 +102,7 @@ controller:
     #   drop:
     #     - all
     # readOnlyRootFilesystem: true
+    # runAsNonRoot: true
 
   ## Configures the controller port
   containerPort: 8082
@@ -133,6 +143,14 @@ controller:
   tolerations: []
   affinity: {}
 
+  # Pod Topology Spread Constraints
+  # Ref: https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
+  # If labelSelector is left out, it will default to the labelSelector configuration of the deployment
+  topologySpreadConstraints: []
+  # - maxSkew: 1
+  #   topologyKey: topology.kubernetes.io/zone
+  #   whenUnsatisfiable: DoNotSchedule
+
   priorityClassName: ""
 
   resources: {}
@@ -161,6 +179,8 @@ controller:
     serviceMonitor:
       enabled: false
       interval: 30s
+      relabelings: []
+      metricRelabelings: []
     #   selector:
     #     prometheus: kube-prometheus
     #   namespace: monitoring
@@ -208,6 +228,8 @@ controller:
     enabled: false
     rules: []
 
+  ## Additional containers to be added to the controller pod.
+  extraContainers: []
 
 ## Dex
 dex:
@@ -222,6 +244,8 @@ dex:
     serviceMonitor:
       enabled: false
       interval: 30s
+      relabelings: []
+      metricRelabelings: []
       # selector:
       #   prometheus: kube-prometheus
       # namespace: monitoring
@@ -229,7 +253,7 @@ dex:
 
   image:
     repository: ghcr.io/dexidp/dex
-    tag: v2.27.0
+    tag: v2.30.0
     imagePullPolicy: IfNotPresent
   initImage:
     repository:
@@ -255,6 +279,23 @@ dex:
   ##
   podLabels: {}
 
+  ## Probes for Dex server
+  ## Supported from Dex >= 2.28.0
+  livenessProbe:
+    enabled: false
+    failureThreshold: 3
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    successThreshold: 1
+    timeoutSeconds: 1
+  readinessProbe:
+    enabled: false
+    failureThreshold: 3
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    successThreshold: 1
+    timeoutSeconds: 1
+
   serviceAccount:
     create: true
     name: argocd-dex-server
@@ -273,11 +314,19 @@ dex:
     - name: static-files
       emptyDir: {}
 
+  ## Extra volumes to the controller pod.
+  extraVolumes: []
+
+  ## Extra volumeMounts to the controller pod.
+  extraVolumeMounts: []
+
   ## Dex deployment container ports
   containerPortHttp: 5556
   servicePortHttp: 5556
+  servicePortHttpName: http
   containerPortGrpc: 5557
   servicePortGrpc: 5557
+  servicePortGrpcName: grpc
   containerPortMetrics: 5558
   servicePortMetrics: 5558
 
@@ -287,6 +336,14 @@ dex:
   nodeSelector: {}
   tolerations: []
   affinity: {}
+
+  # Pod Topology Spread Constraints
+  # Ref: https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
+  # If labelSelector is left out, it will default to the labelSelector configuration of the deployment
+  topologySpreadConstraints: []
+  # - maxSkew: 1
+  #   topologyKey: topology.kubernetes.io/zone
+  #   whenUnsatisfiable: DoNotSchedule
 
   priorityClassName: ""
 
@@ -306,6 +363,9 @@ dex:
   #    cpu: 10m
   #    memory: 32Mi
 
+  ## Additional containers to be added to the dex pod.
+  extraContainers: []
+
 ## Redis
 redis:
   enabled: true
@@ -313,7 +373,7 @@ redis:
 
   image:
     repository: redis
-    tag: 6.2.2-alpine
+    tag: 6.2.4-alpine
     imagePullPolicy: IfNotPresent
 
   ## Additional command line arguments to pass to redis-server
@@ -352,6 +412,14 @@ redis:
   tolerations: []
   affinity: {}
 
+  # Pod Topology Spread Constraints
+  # Ref: https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
+  # If labelSelector is left out, it will default to the labelSelector configuration of the deployment
+  topologySpreadConstraints: []
+  # - maxSkew: 1
+  #   topologyKey: topology.kubernetes.io/zone
+  #   whenUnsatisfiable: DoNotSchedule
+
   priorityClassName: ""
 
   ## Labels to set container specific security contexts
@@ -364,10 +432,8 @@ redis:
 
   ## Redis Pod specific security context
   securityContext:
-    runAsUser: 1000
-    runAsGroup: 1000
-    fsGroup: 1000
     runAsNonRoot: true
+    runAsUser: 999
 
   serviceAccount:
     create: false
@@ -388,6 +454,44 @@ redis:
   volumeMounts: []
   volumes: []
 
+  ## Additional containers to be added to the redis pod.
+  extraContainers: []
+
+  service:
+    annotations: {}
+    labels: {}
+
+  metrics:
+    enabled: false
+    image:
+      repository: quay.io/bitnami/redis-exporter
+      tag: 1.26.0-debian-10-r2
+      imagePullPolicy: IfNotPresent
+    containerPort: 9121
+    resources: {}
+      # limits:
+      #   cpu: 50m
+      #   memory: 64Mi
+      # requests:
+      #   cpu: 10m
+      #   memory: 32Mi
+    service:
+      type: ClusterIP
+      clusterIP: None
+      annotations: {}
+      labels: {}
+      servicePort: 9121
+      portName: http-metrics
+    serviceMonitor:
+      enabled: false
+      interval: 30s
+      relabelings: []
+      metricRelabelings: []
+      selector: {}
+        # prometheus: kube-prometheus
+      # namespace: monitoring
+      additionalLabels: {}
+
 # This key configures Redis-HA subchart and when enabled (redis-ha.enabled=true)
 # the custom redis deployment is omitted
 redis-ha:
@@ -406,7 +510,7 @@ redis-ha:
     metrics:
       enabled: true
   image:
-    tag: 6.2.2-alpine
+    tag: 6.2.4-alpine
 
 ## Server
 server:
@@ -430,6 +534,10 @@ server:
   ##
   extraArgs: []
   #  - --insecure
+
+  # This flag is used to either remove or pass the CLI flag --staticassets /shared/app to the argocd-server app
+  staticAssets:
+    enabled: true
 
   ## Environment variables to pass to argocd-server
   ##
@@ -492,6 +600,14 @@ server:
   tolerations: []
   affinity: {}
 
+  # Pod Topology Spread Constraints
+  # Ref: https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
+  # If labelSelector is left out, it will default to the labelSelector configuration of the deployment
+  topologySpreadConstraints: []
+  # - maxSkew: 1
+  #   topologyKey: topology.kubernetes.io/zone
+  #   whenUnsatisfiable: DoNotSchedule
+
   priorityClassName: ""
 
   ## Labels to set container specific security contexts
@@ -537,6 +653,7 @@ server:
     loadBalancerSourceRanges: []
     externalIPs: []
     externalTrafficPolicy: ""
+    sessionAffinity: ""
 
   ## Server metrics service configuration
   metrics:
@@ -548,6 +665,8 @@ server:
     serviceMonitor:
       enabled: false
       interval: 30s
+      relabelings: []
+      metricRelabelings: []
     #   selector:
     #     prometheus: kube-prometheus
     #   namespace: monitoring
@@ -606,6 +725,16 @@ server:
     labels: {}
     ingressClassName: ""
 
+    awsALB:
+      ## Service Type if isAWSALB is set to true
+      ## Can be of type NodePort or ClusterIP depending on which mode you are
+      ## are running. Instance mode needs type NodePort, IP mode needs type
+      ## ClusterIP
+      ## Ref: https://kubernetes-sigs.github.io/aws-load-balancer-controller/v2.2/how-it-works/#ingress-traffic
+      serviceType: NodePort
+      # This tells AWS to send traffic from the ALB using HTTP2. Can use GRPC as well if you want to leverage GRPC specific features
+      backendProtocolVersion: HTTP2
+
     ## Argo Ingress.
     ## Hostnames must be provided if Ingress is enabled.
     ## Secrets must be manually created in the namespace
@@ -653,6 +782,8 @@ server:
     url: https://argocd.example.com
     # Argo CD instance label key
     application.instanceLabelKey: argocd.argoproj.io/instance
+
+    # DEPRECATED: Please instead use configs.credentialTemplates and configs.repositories
     # repositories: |
     #   - url: git@github.com:group/repo.git
     #     sshPrivateKeySecret:
@@ -664,6 +795,7 @@ server:
     #   - type: helm
     #     url: https://argoproj.github.io/argo-helm
     #     name: argo
+
     # oidc.config: |
     #   name: AzureAD
     #   issuer: https://login.microsoftonline.com/TENANT_ID/v2.0
@@ -718,6 +850,8 @@ server:
   #   namespace: argocd
   #   additionalLabels: {}
   #   additionalAnnotations: {}
+  #   finalizers:
+  #   - resources-finalizer.argocd.argoproj.io
   #   project: guestbook
   #   source:
   #     repoURL: https://github.com/argoproj/argocd-example-apps.git
@@ -725,13 +859,21 @@ server:
   #     path: guestbook
   #     directory:
   #       recurse: true
-  #  destination:
+  #   destination:
   #     server: https://kubernetes.default.svc
   #     namespace: guestbook
-  #  syncPolicy:
-  #    automated:
-  #      prune: false
-  #      selfHeal: false
+  #   syncPolicy:
+  #     automated:
+  #       prune: false
+  #       selfHeal: false
+  #   ignoreDifferences:
+  #   - group: apps
+  #     kind: Deployment
+  #     jsonPointers:
+  #     - /spec/replicas
+  #   info:
+  #   - name: url
+  #     value: https://argoproj.github.io/
 
   ## Projects
   ## reference: https://github.com/argoproj/argo-cd/blob/master/docs/operator-manual/
@@ -740,6 +882,8 @@ server:
   #   namespace: argocd
   #   additionalLabels: {}
   #   additionalAnnotations: {}
+  #   finalizers:
+  #   - resources-finalizer.argocd.argoproj.io
   #   description: Example Project
   #   sourceRepos:
   #   - '*'
@@ -889,6 +1033,14 @@ repoServer:
   tolerations: []
   affinity: {}
 
+  # Pod Topology Spread Constraints
+  # Ref: https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
+  # If labelSelector is left out, it will default to the labelSelector configuration of the deployment
+  topologySpreadConstraints: []
+  # - maxSkew: 1
+  #   topologyKey: topology.kubernetes.io/zone
+  #   whenUnsatisfiable: DoNotSchedule
+
   priorityClassName: ""
 
   ## Labels to set container specific security contexts
@@ -924,10 +1076,23 @@ repoServer:
     serviceMonitor:
       enabled: false
       interval: 30s
+      relabelings: []
+      metricRelabelings: []
     #   selector:
     #     prometheus: kube-prometheus
     #   namespace: monitoring
     #   additionalLabels: {}
+
+  ## Enable Admin ClusterRole resources.
+  ## Enable if you would like to grant cluster rights to ArgoCD repo-server.
+  clusterAdminAccess:
+    enabled: false
+  ## Enable Custom Rules for the Repo server's Cluster Role resource
+  ## Enable this and set the rules: to whatever custom rules you want for the Cluster Role resource.
+  ## Defaults to off
+  clusterRoleRules:
+    enabled: false
+    rules: []
 
   ## Repo server service account
   ## If create is set to true, make sure to uncomment the name and update the rbac section below
@@ -938,6 +1103,9 @@ repoServer:
     annotations: {}
     ## Automount API credentials for the Service Account
     automountServiceAccountToken: true
+
+  ## Additional containers to be added to the repo server pod.
+  extraContainers: []
 
   ## Repo server rbac rules
   # rbac:
@@ -1070,25 +1238,48 @@ configs:
     #     +LB9LGh4OAp68ImTjqf6ioGKG0RBSznwME+r4nXtT1S/qLR6ASWUS4ViWRhbRlNK
     #     XWyb96wrUlv+E8I=
     #     -----END CERTIFICATE-----
-  # Creates a secret with optional repository credentials
-  repositoryCredentials:
-    {}
-    # sample-ssh-key: |
-    # -----BEGIN RSA PRIVATE KEY-----
-    # MIICXAIBAAKBgQCcmiVJXGUvL8zqWmRRETbCKgFadtjJ9WDQpSwiZzMiktpYBo0N
-    # z0cThzGQfWqvdiJYEy72MrKCaSYssV3eHP5zTffk4VBDktNfdl1kgkOpqnh7tQO4
-    # nBONRLzcK6KEbKUsmiTbW8Jb4UFYDhyyyveby7y3vYePmaRQIrlEenVfKwIDAQAB
-    # AoGAbbg+WZjnt9jYzHWKhZX29LDzg8ty9oT6URT4yB3gIOAdJMFqQHuyg8cb/e0x
-    # O0AcrfK623oHwgEj4vpeFwnfaBdtM5GfH9zaj6pnXV7VZc3oBHrBnHUgFT3NEYUe
-    # tt6rtatIguBH61Aj/pyij9sOfF0xDj0s1nwFTbdHtZR/31kCQQDIwcVTqhKkDNW6
-    # cvdz+Wt3v9x1wNg+VhZhyA/pKILz3+qtn3GogLrQqhpVi+Y7tdvEv9FvgKaCjUp8
-    # 6Lfp6dDFAkEAx7HpQbXFdrtcveOi9kosKRDX1PT4zdhB08jAXGlV8jr0jkrZazVM
-    # hV5rVCuu35Vh6x1fiyGwwiVsqhgWE+KPLwJAWrDemasM/LsnmjDxhJy6ZcBwsWlK
-    # xu5Q8h9UwLmiXtVayNBsofh1bGpLtzWZ7oN7ImidDkgJ8JQvgDoJS0xrGQJBALPJ
-    # FkMFnrjtqGqBVkc8shNqyZY90v6oM2OzupO4dht2PpUZCDPAMZtlTWXjSjabbCPc
-    # NxexBk1UmkdtFftjHxsCQGjG+nhRYH92MsmrbvZyFzgxg9SIOu6xel7D3Dq9l5Le
-    # XG+bpHPF4SiCpAxthP5WNa17zuvk+CDsMZgZNuhYNMo=
-    # -----END RSA PRIVATE KEY-----
+## # Creates a secret with optional repository credentials
+## DEPRECATED: Instead, use configs.credentialTemplates and/or configs.repositories
+  repositoryCredentials: {}
+
+## Creates a secret for each key/value specified below to create repository credentials
+  credentialTemplates: {}
+    # github-enterprise-creds-1:
+    #   url: https://github.com/argoproj
+    #   githubAppID: 1
+    #   githubAppInstallationID: 2
+    #   githubAppEnterpriseBaseUrl: https://ghe.example.com/api/v3
+    #   githubAppPrivateKey: |
+    #     -----BEGIN OPENSSH PRIVATE KEY-----
+    #     ...
+    #     -----END OPENSSH PRIVATE KEY-----
+    # https-creds:
+    #   url: https://github.com/argoproj
+    #   password: my-password
+    #   username: my-username
+    # ssh-creds:
+    #  url: git@github.com:argoproj-labs
+    #  sshPrivateKey: |
+    #    -----BEGIN OPENSSH PRIVATE KEY-----
+    #    ...
+    #    -----END OPENSSH PRIVATE KEY-----
+
+## Creates a secret for each key/value specified below to create repositories
+## Note: the last example in the list would use a repository credential template, configured under "configs.repositoryCredentials".
+  repositories: {}
+    # istio-helm-repo:
+    #   url: https://storage.googleapis.com/istio-prerelease/daily-build/master-latest-daily/charts
+    #   name: istio.io
+    #   type: helm
+    # private-helm-repo:
+    #   url: https://my-private-chart-repo.internal
+    #   name: private-repo
+    #   type: helm
+    #   password: my-password
+    #   username: my-username
+    # private-repo:
+    #   url: https://github.com/argoproj/private-repo
+
   secret:
     createSecret: true
     ## Annotations to be added to argocd-secret

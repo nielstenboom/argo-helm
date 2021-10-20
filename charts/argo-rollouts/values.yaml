@@ -1,4 +1,5 @@
 installCRDs: true
+keepCRDs: true
 
 clusterInstall: true
 
@@ -16,6 +17,10 @@ controller:
     tag: ""
     pullPolicy: IfNotPresent
 
+  ## Additional command line arguments to pass to rollouts-controller
+  ##
+  extraArgs: []
+
   resources: {}
   #  limits:
   #    cpu: 100m
@@ -30,6 +35,26 @@ controller:
       enabled: false
       additionalLabels: {}
       additionalAnnotations: {}
+
+  ## Readiness and liveness probes for rollouts controller
+  livenessProbe:
+    httpGet:
+      path: /metrics
+      port: 8090
+    initialDelaySeconds: 30
+    periodSeconds: 20
+    failureThreshold: 3
+    successThreshold: 1
+    timeoutSeconds: 10
+  readinessProbe:
+    httpGet:
+      path: /metrics
+      port: 8090
+    initialDelaySeconds: 15
+    periodSeconds: 5
+    failureThreshold: 3
+    successThreshold: 1
+    timeoutSeconds: 4
 
 serviceAccount:
   # Specifies whether a service account should be created
@@ -74,3 +99,31 @@ podLabels: {}
 # Secrets with credentials to pull images from a private registry
 imagePullSecrets: []
 # - name: argo-pull-secret
+
+dashboard:
+  enabled: false
+  component: rollouts-dashboard
+  ## Node selectors and tolerations for server scheduling to nodes with taints
+  ## Ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/
+  ##
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  image:
+    registry: quay.io
+    repository: argoproj/kubectl-argo-rollouts
+    tag: ""
+    pullPolicy: IfNotPresent
+  ## Additional command line arguments to pass to rollouts-dashboard
+  ##
+  extraArgs: []
+  resources: {}
+  podSecurityContext:
+    runAsNonRoot: true
+  containerSecurityContext: {}
+  serviceAccount:
+    create: true
+    annotations: {}
+    # The name of the service account to use.
+    # If not set and create is true, a name is generated using the fullname template
+    name: ""

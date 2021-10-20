@@ -16,17 +16,15 @@ spec:
   {{- end }}
   template:
     metadata:
-      {{- if .Values.server.podAnnotations }}
+      {{- with (mergeOverwrite (deepCopy .Values.global.podAnnotations) .Values.server.podAnnotations) }}
       annotations:
-      {{- range $key, $value := .Values.server.podAnnotations }}
-        {{ $key }}: {{ $value | quote }}
-      {{- end }}
+        {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
         {{- include "argo-cd.labels" (dict "context" . "component" .Values.server.name "name" .Values.server.name) | nindent 8 }}
         app.kubernetes.io/version: {{ default .Values.global.image.tag .Values.server.image.tag | quote }}
-        {{- if .Values.server.podLabels }}
-{{- toYaml .Values.server.podLabels | nindent 8 }}
+        {{- with (mergeOverwrite (deepCopy .Values.global.podLabels) .Values.server.podLabels) }}
+          {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
       {{- with .Values.global.imagePullSecrets }}
@@ -42,8 +40,10 @@ spec:
         imagePullPolicy: {{ default .Values.global.image.imagePullPolicy .Values.server.image.imagePullPolicy }}
         command:
         - argocd-server
+        {{ if .Values.server.staticAssets.enabled }}
         - --staticassets
         - /shared/app
+        {{ end }}
         - --repo-server
         - {{ template "argo-cd.repoServer.fullname" . }}:{{ .Values.repoServer.service.port }}
         {{- if .Values.dex.enabled }}
@@ -120,14 +120,14 @@ spec:
           successThreshold: {{ .Values.server.readinessProbe.successThreshold }}
           failureThreshold: {{ .Values.server.readinessProbe.failureThreshold }}
         resources:
-{{- toYaml .Values.server.resources | nindent 10 }}
-      {{- if .Values.server.lifecycle }}
+          {{- toYaml .Values.server.resources | nindent 10 }}
+        {{- if .Values.server.lifecycle }}
         lifecycle:
-{{- toYaml .Values.server.lifecycle | nindent 10 }}
+          {{- toYaml .Values.server.lifecycle | nindent 10 }}
+        {{- end }}
+      {{- with .Values.server.extraContainers }}
+        {{- toYaml . | nindent 6 }}
       {{- end }}
-    {{- if .Values.server.extraContainers }}
-{{- toYaml .Values.server.extraContainers | nindent 6 }}
-    {{- end }}
     {{- if .Values.server.nodeSelector }}
       nodeSelector:
 {{- toYaml .Values.server.nodeSelector | nindent 8 }}
@@ -140,11 +140,22 @@ spec:
       affinity:
 {{- toYaml .Values.server.affinity | nindent 8 }}
     {{- end }}
+    {{- with .Values.server.topologySpreadConstraints }}
+      topologySpreadConstraints:
+      {{- range $constraint := . }}
+      - {{ toYaml $constraint | nindent 8 | trim }}
+        {{- if not $constraint.labelSelector }}
+        labelSelector:
+          matchLabels:
+            {{- include "argo-cd.selectorLabels" (dict "context" $ "name" $.Values.server.name) | nindent 12 }}
+        {{- end }}
+      {{- end }}
+    {{- end }}
       serviceAccountName: {{ template "argo-cd.serverServiceAccountName" . }}
-{{- with .Values.global.hostAliases }}
+      {{- with .Values.global.hostAliases }}
       hostAliases:
-{{ toYaml . | indent 6 }}
-{{- end }}
+        {{- toYaml . | nindent 6 }}
+      {{- end }}
       volumes:
       {{- if .Values.server.volumes }}
 {{- toYaml .Values.server.volumes | nindent 6}}
